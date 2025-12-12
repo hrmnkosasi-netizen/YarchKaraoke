@@ -1,0 +1,859 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Yarch X - Premium KTV (Anti-Limit)</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Plus Jakarta Sans', 'sans-serif'] },
+                    colors: {
+                        dark: { 950: '#000000', 900: '#0a0a0a', 850: '#121212', 800: '#18181b' },
+                        primary: { 500: '#8b5cf6', 600: '#7c3aed' }, 
+                        accent: { 500: '#ec4899' }
+                    },
+                    boxShadow: { 'glow': '0 0 25px -5px rgba(139, 92, 246, 0.6)' },
+                    animation: { 'marquee': 'marquee 20s linear infinite', 'pop': 'pop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)', 'pulse-fast': 'pulse 1s cubic-bezier(0.4, 0, 0.6, 1) infinite' },
+                    keyframes: { 
+                        marquee: { '0%': { transform: 'translateX(100%)' }, '100%': { transform: 'translateX(-100%)' } },
+                        pop: { '0%': { transform: 'scale(0.8)', opacity: 0 }, '100%': { transform: 'scale(1)', opacity: 1 } }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        .hide-scroll::-webkit-scrollbar { display: none; }
+        .glass-nav-container { 
+            background: linear-gradient(to top, #000 20%, rgba(0,0,0,0.9) 80%, transparent 100%);
+            padding-bottom: 20px;
+        }
+        .glass-pill { 
+            background: rgba(20, 20, 20, 0.85); 
+            backdrop-filter: blur(20px); 
+            border: 1px solid rgba(255,255,255,0.1); 
+        }
+        .anim-fade { animation: fadeIn 0.4s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .mic-pulse { animation: pulse-glow 2s infinite; }
+        @keyframes pulse-glow { 0% { box-shadow: 0 0 0 0 rgba(139, 92, 246, 0.7); } 70% { box-shadow: 0 0 0 10px rgba(139, 92, 246, 0); } 100% { box-shadow: 0 0 0 0 rgba(139, 92, 246, 0); } }
+        
+        .listening-ring {
+            box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+            animation: ring-red 1.5s infinite;
+        }
+        @keyframes ring-red {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+            70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+        }
+        .active-tab { border-bottom: 2px solid #8b5cf6; color: #8b5cf6; }
+    </style>
+</head>
+<body class="bg-dark-950 text-white overflow-hidden">
+
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        // --- SOLUSI ANTI-LIMIT: MASUKKAN BANYAK KEY DI SINI ---
+        // Buat beberapa project di Google Cloud Console dan generate key berbeda-beda
+        const YOUTUBE_API_KEYS = [
+            'AIzaSyBrYY2DVKndcd5eXmi8Za-r1DedNmrccZY', // Key Utama
+            'AIzaSyD5x-5y13HcqV6YLP9RIMHR4FLyg810EIE', // Ganti dengan Key Cadangan 1
+            'AIzaSyCb6SnRAPBJhhDzXiYGPjJ34_io0ty1n-M', // Ganti dengan Key Cadangan 2
+            'AIzaSyDfhGUOf5DhU4ZZqbrsHRafPea6LUn9MNo',  // Ganti dengan Key Cadangan 3
+            'AIzaSyCZmDA_w5oFSNDEWmC_xdOd5IWIsfo1Gow',
+            'AIzaSyDjNAGbPGCsbOtkUsdH2JtcR0Lt8pBuMzk',
+            'AIzaSyAwyTJhfzyuYS6c-ghzLFwsLqqAnTnqaZI'
+        ];
+
+        // --- DATA CONSTANTS ---
+        const LANG_FILTERS = [
+            { id: 'all', label: 'Semua', query: '' },
+            { id: 'id', label: '🇮🇩 Indo', query: 'indonesia' },
+            { id: 'en', label: '🇬🇧 Barat', query: 'western' },
+            { id: 'jv', label: '🎭 Jawa', query: 'dangdut koplo' },
+            { id: 'kr', label: '🇰🇷 K-Pop', query: 'kpop' },
+            { id: 'cn', label: '🇨🇳 Mandarin', query: 'mandarin' },
+            { id: 'jp', label: '🇯🇵 Jepang', query: 'japanese' }
+        ];
+
+        const MOOD_FILTERS = [
+            { id: 'Populer', query: 'top hits', icon: 'fire' },
+            { id: 'Trending', query: 'trending', icon: 'trendUp' },
+            { id: 'Galau', query: 'sad ballad', icon: 'cloudRain' },
+            { id: 'Rock', query: 'rock', icon: 'zap' },
+            { id: 'Nostalgia', query: 'oldies 90s', icon: 'disc' },
+        ];
+
+        const LOCAL_DB = [
+            { id: 'hT_nvWreIhg', title: 'Counting Stars - Karaoke', artist: 'OneRepublic', cover: 'https://i.ytimg.com/vi/hT_nvWreIhg/hqdefault.jpg' },
+            { id: 'Q_1tWkK6iQ8', title: 'Sial - Karaoke', artist: 'Mahalini', cover: 'https://i.ytimg.com/vi/Q_1tWkK6iQ8/hqdefault.jpg' },
+            { id: 't9tA3R4K6-M', title: 'Komang - Karaoke', artist: 'Raim Laode', cover: 'https://i.ytimg.com/vi/t9tA3R4K6-M/hqdefault.jpg' },
+            { id: 'gdZLi9oWNZg', title: 'Dynamite - Karaoke', artist: 'BTS', cover: 'https://i.ytimg.com/vi/gdZLi9oWNZg/hqdefault.jpg' },
+            { id: 'an4ySOlsUMY', title: 'Tak Segampang Itu', artist: 'Anggi Marito', cover: 'https://i.ytimg.com/vi/an4ySOlsUMY/hqdefault.jpg' }
+        ];
+
+        const COUNTRIES_MAP = [
+            { label: 'Semua', code: 'US', defaultQuery: 'top hits' },
+            { label: 'Indonesia', code: 'ID', defaultQuery: 'hits indonesia' },
+            { label: 'USA', code: 'US', defaultQuery: 'top 100' },
+            { label: 'Korea', code: 'KR', defaultQuery: 'k-pop' },
+            { label: 'Japan', code: 'JP', defaultQuery: 'j-pop' },
+            { label: 'China', code: 'CN', defaultQuery: 'mandopop' }
+        ];
+
+        // --- COMPONENTS HELPER ---
+        const SafeImage = ({ src, alt, className, fallbackText }) => {
+            const [err, setErr] = useState(false);
+            if (err || !src) return (
+                <div className={`${className} bg-dark-800 flex items-center justify-center text-[9px] text-gray-500 border border-white/5`}>
+                    {fallbackText || 'IMG'}
+                </div>
+            );
+            return <img src={src} alt={alt} className={className} onError={() => setErr(true)} />;
+        };
+
+        const Icon = ({ name, size=24, className, fill="none" }) => {
+            const paths = {
+                home: "M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z",
+                mic: "M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z M19 10v2a7 7 0 01-14 0v-2 M12 19v4 M8 23h8",
+                queue: "M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01",
+                search: "M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z",
+                play: "M5 3l14 9-14 9V3z",
+                pause: "M6 4h4v16H6V4zm8 0h4v16h-4V4z",
+                next: "M5 4l10 8-10 8V4zm10 0v16h4V4h-4z",
+                prev: "M19 20L9 12l10-8v16zM5 4v16H9V4H5z",
+                arrowLeft: "M19 12H5M12 19l-7-7 7-7",
+                plus: "M12 5v14M5 12h14",
+                trash: "M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2",
+                star: "M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z",
+                heart: "M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z",
+                volume: "M11 5L6 9H2v6h4l5 4V5zM15.54 8.46a5 5 0 0 1 0 7.07",
+                user: "M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2 M12 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z",
+                close: "M18 6L6 18M6 6l12 12",
+                micFill: "M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 2.34 9 5v6c0 1.66 1.34 3 3 3z M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z",
+                book: "M4 19.5A2.5 2.5 0 0 1 6.5 17H20M6.5 17v-13h12v13h-12a2 2 0 0 0-2 2zm13.5 0h-13.5",
+                history: "M12 8v4l3 3m6-3a9 9 0 1 1-18 0 9 9 0 0 1 18 0z",
+                fire: "M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.1.2-2.2.6-3.3.7 1.8 1.8 2.6 2.9 3.3z",
+                trendUp: "M23 6l-9.5 9.5-5-5L1 18",
+                cloudRain: "M16 13v8M8 13v8M12 15v8M20 16.58A5 5 0 0 0 18 7h-1.26A8 8 0 1 0 4 15.25",
+                zap: "M13 2L3 14h9l-1 8 10-12h-9l1-8z",
+                disc: "M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8zm0-11a3 3 0 1 0 3 3 3 3 0 0 0-3-3z"
+            };
+            return <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill={fill} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d={paths[name]} /></svg>;
+        };
+
+        const App = () => {
+            const [nav, setNav] = useState('home'); 
+            const [selectedLang, setSelectedLang] = useState(LANG_FILTERS[0]);
+            const [selectedMood, setSelectedMood] = useState(MOOD_FILTERS[0]);
+            const [searchQuery, setSearchQuery] = useState('');
+            const [dataList, setDataList] = useState(LOCAL_DB);
+            
+            // API KEY ROTATION STATE
+            const keyIndexRef = useRef(0);
+
+            // Queue & Player State
+            const [queue, setQueue] = useState([]);
+            const [currentSong, setCurrentSong] = useState(null);
+            const [isPlaying, setIsPlaying] = useState(false);
+            const [volume, setVolume] = useState(100);
+            const [history, setHistory] = useState([]);
+            
+            // Status State
+            const [loading, setLoading] = useState(false);
+            const [apiError, setApiError] = useState(false);
+            const [isListening, setIsListening] = useState(false);
+            
+            // Favorites
+            const [favorites, setFavorites] = useState(() => {
+                const saved = localStorage.getItem('yarch_favorites');
+                return saved ? JSON.parse(saved) : [];
+            });
+
+            // Song Book States
+            const [sbTab, setSbTab] = useState('title');
+            const [sbSearch, setSbSearch] = useState('');
+            const [sbCountry, setSbCountry] = useState(COUNTRIES_MAP[0]);
+            const [sbData, setSbData] = useState([]);
+            const [sbLoading, setSbLoading] = useState(false);
+            const [bookView, setBookView] = useState('list');
+            const [bookResults, setBookResults] = useState([]); 
+
+            // Modal Antrian
+            const [showModal, setShowModal] = useState(false);
+            const [tempSong, setTempSong] = useState(null);
+            const [singerName, setSingerName] = useState('');
+            const [singerMessage, setSingerMessage] = useState('');
+
+            useEffect(() => {
+                localStorage.setItem('yarch_favorites', JSON.stringify(favorites));
+            }, [favorites]);
+
+            const toggleFavorite = (e, song) => {
+                e.stopPropagation();
+                const isFav = favorites.some(f => f.id === song.id);
+                if (isFav) {
+                    setFavorites(favorites.filter(f => f.id !== song.id));
+                } else {
+                    setFavorites([...favorites, song]);
+                }
+            };
+
+            const playSfx = (type) => {
+                const sfxUrl = type === 'clap' 
+                    ? 'https://www.soundjay.com/human/applause-01.mp3' 
+                    : 'https://www.soundjay.com/human/laughter-1.mp3';
+                const audio = new Audio(sfxUrl);
+                audio.volume = 0.5;
+                audio.play();
+            };
+
+            // --- SMART API FETCH WITH KEY ROTATION ---
+            const fetchYoutube = async (queryTerm, forBook = false, retryCount = 0) => {
+                if (retryCount >= YOUTUBE_API_KEYS.length) {
+                    console.error("All API Keys exhausted.");
+                    if(!forBook) {
+                        setApiError(true);
+                        setDataList(LOCAL_DB);
+                    } else {
+                        setBookResults(LOCAL_DB);
+                        setBookView('results');
+                    }
+                    setLoading(false);
+                    setSbLoading(false);
+                    return;
+                }
+
+                if(!forBook) {
+                    setLoading(true);
+                    setApiError(false);
+                } else {
+                    setSbLoading(true);
+                }
+                
+                // Ambil key berdasarkan index saat ini
+                const currentKey = YOUTUBE_API_KEYS[keyIndexRef.current];
+                // console.log(`Using Key Index: ${keyIndexRef.current}`); // Debugging
+
+                try {
+                    const res = await axios.get(`https://www.googleapis.com/youtube/v3/search?part=snippet&q=${queryTerm}&type=video&maxResults=20&key=${currentKey}`);
+                    const apiData = res.data.items.map(item => ({
+                        id: item.id.videoId,
+                        title: item.snippet.title,
+                        artist: item.snippet.channelTitle,
+                        cover: item.snippet.thumbnails.high.url
+                    }));
+                    
+                    if (!forBook) {
+                        apiData.length > 0 ? setDataList(apiData) : setDataList(LOCAL_DB);
+                    } else {
+                        setBookResults(apiData);
+                        setBookView('results'); 
+                    }
+                    setLoading(false);
+                    setSbLoading(false);
+
+                } catch (err) { 
+                    // Jika error 403 (Quota Exceeded), putar ke key berikutnya
+                    if (err.response && err.response.status === 403) {
+                        console.warn(`Key ${keyIndexRef.current} limit reached. Rotating...`);
+                        keyIndexRef.current = (keyIndexRef.current + 1) % YOUTUBE_API_KEYS.length;
+                        // Coba lagi dengan key baru (Recursive)
+                        return fetchYoutube(queryTerm, forBook, retryCount + 1);
+                    }
+
+                    // Jika error lain, fallback
+                    console.warn("YouTube API Error (Non-Quota)", err);
+                    if(!forBook) {
+                        setApiError(true);
+                        setDataList(LOCAL_DB);
+                    } else {
+                        setBookResults(LOCAL_DB);
+                        setBookView('results'); 
+                    }
+                    setLoading(false);
+                    setSbLoading(false);
+                }
+            };
+
+            // --- DATABASE API (ITUNES) ---
+            const fetchDatabase = async (overrideTerm) => {
+                setSbLoading(true);
+                let term = overrideTerm || sbSearch;
+                
+                if (!term) {
+                   if (sbTab === 'title') {
+                       term = sbCountry.defaultQuery;
+                   } else {
+                       term = 'artist ' + sbCountry.label;
+                   }
+                }
+
+                const entity = sbTab === 'title' ? 'song' : 'musicArtist';
+                const countryCode = sbCountry.code;
+                const limit = 50;
+
+                try {
+                    const res = await axios.get(`https://itunes.apple.com/search?term=${term}&country=${countryCode}&entity=${entity}&limit=${limit}`);
+                    setSbData(res.data.results);
+                } catch (err) {
+                    console.error("Database error", err);
+                    setSbData([]);
+                } finally {
+                    setSbLoading(false);
+                }
+            };
+
+            useEffect(() => {
+                if (nav === 'book' && sbData.length === 0) fetchDatabase(); 
+            }, [nav]);
+
+            useEffect(() => {
+                if (nav === 'book') fetchDatabase();
+            }, [sbTab, sbCountry]); 
+
+            const handleDbClick = (item) => {
+                let query = '';
+                if (sbTab === 'title') {
+                    query = `${item.trackName} ${item.artistName} karaoke`;
+                } else {
+                    query = `${item.artistName} popular songs karaoke`;
+                }
+                fetchYoutube(query, true); 
+            };
+
+            // --- VOICE SEARCH ---
+            const startVoiceSearch = () => {
+                if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+                    alert("Browser tidak support voice search.");
+                    return;
+                }
+                const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+                const recognition = new SpeechRecognition();
+                recognition.lang = 'id-ID';
+                recognition.interimResults = false;
+                
+                recognition.onstart = () => setIsListening(true);
+                recognition.onend = () => setIsListening(false);
+                
+                recognition.onresult = (event) => {
+                    const transcript = event.results[0][0].transcript;
+                    if(nav === 'book') {
+                        setSbSearch(transcript);
+                        fetchDatabase(transcript);
+                    } else {
+                        setSearchQuery(transcript);
+                        fetchYoutube(transcript + " karaoke");
+                    }
+                };
+                recognition.start();
+            };
+
+            useEffect(() => {
+                if (nav === 'home' && !searchQuery) fetchYoutube(`${selectedLang.query} ${selectedMood.query} karaoke no vocal`);
+            }, [selectedLang, selectedMood, nav]);
+
+            const handleSearch = (e) => {
+                const term = e.target.value;
+                setSearchQuery(term);
+                if (term.length > 2) {
+                    const delay = setTimeout(() => fetchYoutube(term + " karaoke"), 1000);
+                    return () => clearTimeout(delay);
+                }
+            };
+
+            // --- PLAYER LOGIC ---
+            const playSong = (song) => {
+                setCurrentSong(song);
+                setNav('remote');
+                setIsPlaying(true);
+                setHistory(prev => {
+                    if (prev.length > 0 && prev[0].id === song.id) return prev;
+                    return [song, ...prev].slice(0, 50); 
+                });
+            };
+
+            const playFromQueue = (song, index) => {
+                playSong(song);
+                setQueue(queue.filter((_, i) => i !== index));
+            };
+
+            const togglePlay = () => {
+                setIsPlaying(!isPlaying);
+                const iframe = document.getElementById('yt-player');
+                if(iframe) iframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func: isPlaying ? 'pauseVideo' : 'playVideo' }), '*');
+            };
+
+            const changeVolume = (e) => {
+                const newVol = e.target.value;
+                setVolume(newVol);
+                const iframe = document.getElementById('yt-player');
+                if(iframe) iframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'setVolume', args: [newVol] }), '*');
+            }
+
+            // --- QUEUE MODAL ---
+            const initiateAddToQueue = (e, song) => {
+                e.stopPropagation();
+                setTempSong(song);
+                setSingerName('');
+                setSingerMessage('');
+                setShowModal(true);
+            }
+
+            const confirmAddToQueue = () => {
+                if (!tempSong) return;
+                const songWithUser = { ...tempSong, singer: singerName || 'Tamu', message: singerMessage || '' };
+                setQueue([...queue, songWithUser]);
+                setShowModal(false);
+                setTempSong(null);
+            }
+
+            // --- RENDERERS ---
+
+            const renderCard = (song, index) => {
+                const isFav = favorites.some(f => f.id === song.id);
+                return (
+                    <div key={index} onClick={() => playSong(song)} className="group bg-white/5 border border-white/5 rounded-2xl p-2 cursor-pointer active:scale-95 transition hover:bg-white/10 relative">
+                        <div className="relative w-full aspect-video rounded-xl overflow-hidden bg-dark-800 mb-2">
+                            <SafeImage src={song.cover} className="w-full h-full object-cover opacity-90 group-hover:opacity-100" />
+                            <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition">
+                                <Icon name="play" size={24} className="text-white fill-current"/>
+                            </div>
+                        </div>
+                        <div className="px-1">
+                            <h4 className="text-xs font-bold text-white line-clamp-2 leading-tight mb-1">{song.title}</h4>
+                            <div className="flex justify-between items-center mt-2">
+                                <p className="text-[10px] text-gray-500 truncate max-w-[50%]">{song.artist}</p>
+                                <div className="flex gap-1">
+                                    <button onClick={(e) => toggleFavorite(e, song)} className={`w-7 h-7 flex items-center justify-center rounded-lg transition ${isFav ? 'text-pink-500 bg-pink-500/10' : 'text-gray-600 hover:text-pink-400'}`}>
+                                        <Icon name="heart" size={14} fill={isFav ? "currentColor" : "none"}/>
+                                    </button>
+                                    <button onClick={(e) => initiateAddToQueue(e, song)} className="w-7 h-7 flex items-center justify-center rounded-lg bg-primary-500/10 text-primary-500 hover:bg-primary-500 hover:text-white transition">
+                                        <Icon name="plus" size={16}/>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                );
+            };
+
+            const renderHome = () => (
+                <div className="flex-1 overflow-y-auto pb-48 p-5 anim-fade">
+                    <div className="flex items-center justify-between mb-6 pt-2">
+                        <div>
+                            <h1 className="text-xl font-black text-white">Yarch<span className="text-primary-500">X</span></h1>
+                            <p className="text-[10px] text-gray-400 font-bold">KTV SYSTEM</p>
+                        </div>
+                        <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-800 rounded-full border border-gray-700 shadow-sm cursor-pointer active:scale-95 transition" onClick={() => setNav('favorites')}>
+                            <Icon name="heart" size={14} className="text-pink-500" fill="currentColor"/>
+                            <span className="text-[10px] font-bold text-gray-300">Favorit</span>
+                        </div>
+                    </div>
+
+                    <div className="relative mb-6 flex gap-2">
+                        <div className="relative flex-1">
+                            <div className="absolute left-4 top-3.5 text-gray-400"><Icon name="search" size={20}/></div>
+                            <input type="text" value={searchQuery} onChange={handleSearch} placeholder={isListening ? "Mendengarkan..." : "Cari lagu..."} 
+                                className={`w-full bg-dark-900 border ${isListening ? 'border-red-500 text-red-500' : 'border-gray-800 text-white'} rounded-2xl py-3 pl-12 pr-4 text-sm focus:border-primary-500 focus:outline-none transition`}/>
+                        </div>
+                        <button onClick={startVoiceSearch} className={`w-12 h-12 rounded-2xl flex items-center justify-center transition border ${isListening ? 'bg-red-500 text-white border-red-500 listening-ring' : 'bg-dark-900 border-gray-800 text-gray-400 hover:text-white'}`}>
+                            <Icon name="micFill" size={20} fill="currentColor"/>
+                        </button>
+                    </div>
+
+                    {!searchQuery && (
+                        <>
+                            <div className="flex gap-2 overflow-x-auto hide-scroll mb-4 pb-2">
+                                {LANG_FILTERS.map(lang => (
+                                    <button key={lang.id} onClick={() => { setSearchQuery(''); setSelectedLang(lang); }}
+                                        className={`px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap border transition ${selectedLang.id === lang.id ? 'bg-white text-black border-white' : 'bg-dark-800 border-gray-800 text-gray-400'}`}>
+                                        {lang.label}
+                                    </button>
+                                ))}
+                            </div>
+                            
+                            {/* MODERNIZED MOOD FILTERS */}
+                            <div className="flex gap-3 overflow-x-auto hide-scroll mb-8 pb-2">
+                                {MOOD_FILTERS.map(mood => (
+                                    <button key={mood.id} onClick={() => setSelectedMood(mood)}
+                                        className={`group relative flex items-center gap-3 px-5 py-3 rounded-2xl min-w-[140px] border transition-all duration-300 active:scale-95 ${selectedMood.id === mood.id ? 'bg-primary-600/20 border-primary-500 text-white shadow-[0_0_15px_rgba(139,92,246,0.3)]' : 'bg-dark-800/40 border-white/5 text-gray-400 hover:bg-dark-800'}`}>
+                                        
+                                        <div className={`p-2 rounded-full transition-colors ${selectedMood.id === mood.id ? 'bg-primary-500 text-white' : 'bg-white/5 text-gray-500 group-hover:text-primary-400'}`}>
+                                            <Icon name={mood.icon} size={18} />
+                                        </div>
+                                        <div className="flex flex-col items-start">
+                                            <span className="text-xs font-bold tracking-wide">{mood.id}</span>
+                                            <span className="text-[9px] opacity-60 font-medium">Collection</span>
+                                        </div>
+                                    </button>
+                                ))}
+                            </div>
+                        </>
+                    )}
+
+                    <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-4">
+                        {searchQuery ? 'Hasil Pencarian' : `${selectedMood.id} - ${selectedLang.label}`}
+                    </h3>
+                    
+                    {loading ? <div className="text-center py-10 text-gray-500 animate-pulse text-sm">Sedang mencari...</div> : (
+                        <div className="grid grid-cols-2 gap-3 pb-4">
+                            {dataList.map((song, i) => renderCard(song, i))}
+                        </div>
+                    )}
+                </div>
+            );
+
+            // --- SONG BOOK COMPONENT ---
+            const renderBook = () => {
+                if (bookView === 'results') {
+                    return (
+                        <div className="flex-1 overflow-y-auto pb-48 p-5 anim-fade">
+                            <div className="flex items-center gap-3 mb-6">
+                                <button onClick={() => setBookView('list')} className="bg-gray-800 hover:bg-gray-700 text-white px-4 py-2 rounded-xl flex items-center gap-2 text-xs font-bold transition">
+                                    <Icon name="arrowLeft" size={16} /> KEMBALI
+                                </button>
+                                <h2 className="text-lg font-bold text-white">Hasil Pencarian</h2>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3 pb-4">
+                                {bookResults.map((song, i) => renderCard(song, i))}
+                            </div>
+                        </div>
+                    )
+                }
+
+                return (
+                    <div className="flex-1 overflow-y-auto pb-48 p-5 anim-fade">
+                        <h2 className="text-xl font-bold text-white mb-4">Song Book 📖</h2>
+                        
+                        <div className="flex border-b border-gray-700 mb-4">
+                            <button className={`flex-1 pb-3 text-sm font-bold transition ${sbTab === 'title' ? 'active-tab' : 'text-gray-500'}`}
+                                onClick={() => { setSbTab('title'); setSbSearch(''); }}>
+                                List Title Song
+                            </button>
+                            <button className={`flex-1 pb-3 text-sm font-bold transition ${sbTab === 'artist' ? 'active-tab' : 'text-gray-500'}`}
+                                onClick={() => { setSbTab('artist'); setSbSearch(''); }}>
+                                List Artist Name
+                            </button>
+                        </div>
+
+                        <div className="space-y-3 mb-6">
+                             <div className="relative">
+                                <Icon name="search" size={18} className="absolute left-4 top-3 text-gray-400" />
+                                <input 
+                                    type="text" 
+                                    placeholder={`Cari ${sbTab === 'title' ? 'judul lagu' : 'nama artis'}...`}
+                                    className="w-full bg-dark-900 border border-gray-700 rounded-xl py-2.5 pl-12 pr-4 text-sm focus:border-primary-500 focus:outline-none"
+                                    value={sbSearch}
+                                    onChange={(e) => {
+                                        setSbSearch(e.target.value);
+                                        if(e.target.value.length > 2) fetchDatabase(e.target.value);
+                                    }}
+                                />
+                            </div>
+                            <div className="flex items-center gap-2 justify-between">
+                                <span className="text-[10px] text-gray-500 font-bold uppercase">Filter Negara:</span>
+                                <div className="flex gap-2 overflow-x-auto hide-scroll">
+                                    {COUNTRIES_MAP.map((country, idx) => (
+                                        <button 
+                                            key={idx}
+                                            onClick={() => { setSbCountry(country); }}
+                                            className={`px-3 py-1 rounded-lg text-xs font-bold whitespace-nowrap border transition ${sbCountry.code === country.code ? 'bg-primary-600 border-primary-500 text-white' : 'bg-dark-800 border-gray-700 text-gray-400'}`}
+                                        >
+                                            {country.label}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="space-y-2">
+                            {sbLoading && <div className="text-center text-gray-500 text-xs py-4 animate-pulse">Mengambil data...</div>}
+                            
+                            {!sbLoading && sbData.length === 0 && (
+                                <div className="text-center text-gray-600 text-xs py-10">
+                                    Tidak ada data ditemukan.
+                                </div>
+                            )}
+                            
+                            {!sbLoading && sbData.length > 0 && (
+                                <div className="text-[10px] text-gray-500 uppercase font-bold mb-2">
+                                    {sbSearch ? 'Hasil Pencarian' : `Top 50 ${sbTab === 'title' ? 'Lagu' : 'Artis'} - ${sbCountry.label}`}
+                                </div>
+                            )}
+
+                            {sbData.map((item, i) => (
+                                <div key={i} onClick={() => handleDbClick(item)} 
+                                    className="flex items-center gap-3 p-3 bg-dark-800 rounded-xl hover:bg-dark-700 cursor-pointer transition border border-transparent hover:border-primary-500/30">
+                                    <span className="text-gray-600 font-bold text-xs w-5 text-center">{i+1}</span>
+                                    {item.artworkUrl60 ? (
+                                        <img src={item.artworkUrl60} alt="art" className="w-10 h-10 rounded-md bg-gray-700 object-cover" />
+                                    ) : (
+                                        <div className="w-10 h-10 rounded-md bg-gray-700 flex items-center justify-center text-gray-500 text-[8px]">NO IMG</div>
+                                    )}
+                                    <div className="flex-1 min-w-0">
+                                        <h4 className="text-sm font-bold text-white truncate">{item.trackName || item.artistName}</h4>
+                                        <p className="text-[10px] text-gray-400 truncate">
+                                            {sbTab === 'title' ? item.artistName : item.primaryGenreName}
+                                        </p>
+                                    </div>
+                                    <Icon name="search" size={16} className="text-primary-500" />
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                );
+            };
+
+            const renderHistory = () => (
+                <div className="flex-1 overflow-y-auto pb-48 p-5 anim-fade">
+                    <div className="flex justify-between items-center mb-6">
+                        <h2 className="text-xl font-bold text-white">History Lagu 🕒</h2>
+                        <button onClick={()=>setHistory([])} className="text-xs text-red-500">Clear</button>
+                    </div>
+                    {history.length === 0 ? (
+                        <div className="text-center py-20 text-gray-600 text-sm">Belum ada lagu yang dimainkan.</div>
+                    ) : (
+                        <div className="space-y-3">
+                            {history.map((song, i) => (
+                                <div key={i} className="flex items-center gap-3 p-2 bg-dark-900/50 border border-gray-800 rounded-xl">
+                                    <div className="w-10 h-10 rounded-lg overflow-hidden flex-shrink-0">
+                                        <SafeImage src={song.cover} className="w-full h-full object-cover" />
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <h4 className="text-sm font-bold text-gray-300 truncate">{song.title}</h4>
+                                        <p className="text-[10px] text-gray-500 truncate">{song.artist}</p>
+                                    </div>
+                                    <button onClick={() => playSong(song)} className="p-2 bg-white/5 rounded-full hover:bg-white/10 text-primary-500">
+                                        <Icon name="play" size={16} fill="currentColor"/>
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            );
+
+            const renderFavorites = () => (
+                <div className="flex-1 overflow-y-auto pb-48 p-5 anim-fade">
+                    <div className="flex items-center gap-3 mb-6">
+                        <button onClick={() => setNav('home')} className="bg-gray-800 p-2 rounded-full"><Icon name="prev" size={16}/></button>
+                        <h2 className="text-xl font-bold text-white">Lagu Favorit Kamu</h2>
+                    </div>
+                    {favorites.length === 0 ? (
+                        <div className="text-center py-20 text-gray-600 text-sm">Belum ada lagu favorit.<br/>Tekan ❤️ pada lagu untuk menyimpan.</div>
+                    ) : (
+                        <div className="grid grid-cols-2 gap-3 pb-4">
+                            {favorites.map((song, i) => renderCard(song, i))}
+                        </div>
+                    )}
+                </div>
+            );
+
+            const renderRemote = () => (
+                <div className="flex flex-col h-full p-6 pb-48 anim-fade">
+                    <div className="flex-1 flex flex-col justify-center min-h-0 relative mb-6">
+                        {currentSong ? (
+                            <div className="w-full">
+                                <div className="relative w-full aspect-video bg-black rounded-3xl overflow-hidden shadow-2xl border border-gray-800 z-10">
+                                    <iframe id="yt-player" className="w-full h-full"
+                                        src={`https://www.youtube.com/embed/${currentSong.id}?autoplay=1&enablejsapi=1&controls=1&modestbranding=0&rel=0&fs=1`} 
+                                        frameBorder="0" allow="autoplay; encrypted-media; fullscreen; picture-in-picture"></iframe>
+                                </div>
+                                <div className="flex justify-center gap-4 mt-4">
+                                    <button onClick={() => playSfx('clap')} className="bg-primary-900/30 hover:bg-primary-600 border border-primary-500/30 px-4 py-2 rounded-full text-xs font-bold text-primary-300 hover:text-white transition flex items-center gap-2">
+                                        👏 Tepuk Tangan
+                                    </button>
+                                    <button onClick={() => playSfx('cheer')} className="bg-primary-900/30 hover:bg-primary-600 border border-primary-500/30 px-4 py-2 rounded-full text-xs font-bold text-primary-300 hover:text-white transition flex items-center gap-2">
+                                        🎉 Sorak
+                                    </button>
+                                </div>
+                                <div className="text-center mt-6">
+                                    <h2 className="text-lg font-bold text-white leading-tight line-clamp-2">{currentSong.title}</h2>
+                                    <p className="text-primary-500 text-sm">{currentSong.artist}</p>
+                                </div>
+                                <div className="flex items-center gap-3 mt-6 px-8">
+                                    <Icon name="volume" size={16} className="text-gray-500"/>
+                                    <input type="range" min="0" max="100" value={volume} onChange={changeVolume} 
+                                        className="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-primary-500"/>
+                                </div>
+                                <div className="flex items-center justify-center gap-8 mt-6">
+                                    <button onClick={togglePlay} className="w-16 h-16 bg-white text-black rounded-full flex items-center justify-center shadow-glow active:scale-95 transition">
+                                        <Icon name={isPlaying ? "pause" : "play"} size={28} fill="currentColor"/>
+                                    </button>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="text-center text-gray-500">
+                                <p>Pilih lagu dulu</p>
+                                <button onClick={()=>setNav('home')} className="mt-2 text-primary-500 font-bold">Ke Home</button>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+
+            const renderQueue = () => (
+                <div className="flex-1 overflow-y-auto pb-48 p-5 anim-fade">
+                    <div className="flex justify-between items-end mb-6">
+                        <h2 className="text-2xl font-bold text-white">Antrian Lagu</h2>
+                        <button onClick={()=>setQueue([])} className="text-xs text-red-500 font-bold">Hapus Semua</button>
+                    </div>
+                    {queue.length > 0 ? queue.map((song, i) => (
+                        <div key={i} className="flex items-center gap-3 p-2 bg-dark-900 border border-gray-800 rounded-xl mb-3 hover:border-gray-600 transition w-full overflow-hidden">
+                            <div className="flex-1 flex items-center gap-3 cursor-pointer p-2 min-w-0" onClick={()=>playFromQueue(song, i)}>
+                                <span className="text-primary-500 font-bold w-6 text-center text-sm flex-shrink-0">{i+1}</span>
+                                <div className="min-w-0 flex-1">
+                                    <h4 className="text-sm font-bold text-white truncate block">{song.title}</h4>
+                                    <p className="text-[10px] text-gray-400 font-medium truncate flex items-center gap-1">
+                                        <Icon name="user" size={10} /> {song.singer}
+                                    </p>
+                                    {song.message && (
+                                        <p className="text-[9px] text-primary-400/80 italic truncate">"{song.message}"</p>
+                                    )}
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-1 border-l border-gray-800 pl-2 flex-shrink-0">
+                                <button onClick={()=>setQueue(queue.filter((_,idx)=>idx!==i))} className="w-8 h-16 ml-1 bg-red-500/10 text-red-500 rounded-lg flex items-center justify-center hover:bg-red-500 hover:text-white transition">
+                                    <Icon name="trash" size={18}/>
+                                </button>
+                            </div>
+                        </div>
+                    )) : <div className="text-center py-20 text-gray-700 text-sm">Antrian kosong</div>}
+                </div>
+            );
+
+            const getMarqueeText = () => {
+                if (currentSong && currentSong.message) {
+                    return (
+                        <>
+                             <span className="text-[10px] font-bold text-pink-500 flex items-center gap-2 mx-8">
+                                💌 PESAN DARI {currentSong.singer.toUpperCase()}: <span className="text-white">"{currentSong.message}"</span>
+                            </span>
+                             <span className="text-[10px] font-bold text-gray-400 flex items-center gap-2">
+                                🎵 NOW PLAYING: <span className="text-white">{currentSong.title}</span>
+                            </span>
+                        </>
+                    )
+                }
+                return (
+                    <>
+                        <span className="text-[10px] font-bold text-gray-400 flex items-center gap-2">
+                            🎵 NOW PLAYING: <span className="text-white">{currentSong ? currentSong.title : 'Menunggu Lagu...'}</span>
+                        </span>
+                        <span className="text-[10px] font-bold text-gray-400 flex items-center gap-2">
+                            ⏭️ NEXT: <span className="text-white">{queue.length > 0 ? `${queue[0].title} (${queue[0].singer})` : 'Antrian Kosong'}</span>
+                        </span>
+                    </>
+                )
+            };
+
+            return (
+                <div className="flex flex-col h-screen bg-dark-950 font-sans relative text-slate-200 overflow-hidden">
+                    {/* MODAL ADD QUEUE */}
+                    {showModal && (
+                        <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-6 anim-fade">
+                            <div className="bg-dark-900 border border-white/10 w-full max-w-sm rounded-3xl p-6 shadow-2xl relative animate-pop">
+                                <button onClick={()=>setShowModal(false)} className="absolute top-4 right-4 text-gray-500"><Icon name="close" size={20}/></button>
+                                <h3 className="text-lg font-bold text-white mb-1">Masuk Antrian 🎤</h3>
+                                <p className="text-xs text-gray-400 mb-4 line-clamp-1">{tempSong?.title}</p>
+                                
+                                <div className="mb-4 space-y-3">
+                                    <div>
+                                        <label className="text-[10px] font-bold text-primary-500 uppercase mb-1 block">Nama Penyanyi</label>
+                                        <input autoFocus type="text" value={singerName} onChange={(e)=>setSingerName(e.target.value)} 
+                                            placeholder="Nama kamu..."
+                                            className="w-full bg-dark-950 border border-gray-800 rounded-xl px-4 py-2 text-sm focus:border-primary-500 focus:outline-none"/>
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] font-bold text-pink-500 uppercase mb-1 block">Kirim Pesan (Opsional)</label>
+                                        <input type="text" value={singerMessage} onChange={(e)=>setSingerMessage(e.target.value)} 
+                                            placeholder="Contoh: Buat yang baju merah..."
+                                            className="w-full bg-dark-950 border border-gray-800 rounded-xl px-4 py-2 text-sm focus:border-pink-500 focus:outline-none"/>
+                                    </div>
+                                </div>
+                                <button onClick={confirmAddToQueue} className="w-full bg-primary-600 hover:bg-primary-500 text-white font-bold py-3 rounded-xl transition shadow-glow">
+                                    Tambahkan ke List
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    <div className="fixed top-0 right-0 w-[300px] h-[300px] bg-primary-600/10 rounded-full blur-[120px] pointer-events-none"></div>
+                    
+                    {nav === 'home' && renderHome()}
+                    {nav === 'favorites' && renderFavorites()}
+                    {nav === 'remote' && renderRemote()}
+                    {nav === 'queue' && renderQueue()}
+                    {nav === 'book' && renderBook()}
+                    {nav === 'history' && renderHistory()}
+
+                    {/* FIXED BOTTOM AREA (MARQUEE + NAV) */}
+                    <div className="fixed bottom-0 left-0 w-full z-50 glass-nav-container">
+                        
+                        {/* RUNNING TEXT (MARQUEE) */}
+                        <div className="relative w-full overflow-hidden py-2 mb-2 border-t border-white/5 bg-black/20">
+                            <div className="animate-marquee whitespace-nowrap flex gap-8">
+                                {getMarqueeText()}
+                                <span className="text-[10px] font-bold text-primary-500">
+                                    SELAMAT BERNYANYI DI YARCH X KTV!
+                                </span>
+                            </div>
+                        </div>
+
+                        {/* NAVIGATION PILL (EXPANDED TO 5 MENUS) */}
+                        <div className="px-5">
+                            <div className="glass-pill rounded-2xl h-[72px] flex items-center justify-between px-4 relative max-w-2xl mx-auto shadow-2xl">
+                                
+                                <button onClick={()=>setNav('home')} className={`flex flex-col items-center justify-center w-12 transition ${nav==='home'?'text-white':'text-gray-600'}`}>
+                                    <Icon name="home" size={20} /> <span className="text-[9px] font-bold mt-1">Home</span>
+                                </button>
+                                
+                                <button onClick={()=>setNav('book')} className={`flex flex-col items-center justify-center w-12 transition ${nav==='book'?'text-white':'text-gray-600'}`}>
+                                    <Icon name="book" size={20} /> <span className="text-[9px] font-bold mt-1">Book</span>
+                                </button>
+
+                                <div className="relative -top-6">
+                                    <button onClick={()=>setNav('remote')} className={`w-16 h-16 rounded-full flex items-center justify-center shadow-glow border-[6px] border-dark-950 transition ${nav==='remote'?'bg-white text-black':'bg-gradient-to-tr from-primary-600 to-accent-500 text-white'}`}>
+                                        <Icon name="mic" size={28} className={nav==='remote'?'mic-pulse':''} fill={nav==='remote'?'currentColor':'none'}/>
+                                    </button>
+                                </div>
+
+                                <button onClick={()=>setNav('queue')} className={`flex flex-col items-center justify-center w-12 transition ${nav==='queue'?'text-white':'text-gray-600'}`}>
+                                    <div className="relative">
+                                        <Icon name="queue" size={20} />
+                                        {queue.length > 0 && <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-dark-900 animate-bounce"></span>}
+                                    </div>
+                                    <span className="text-[9px] font-bold mt-1">List</span>
+                                </button>
+
+                                <button onClick={()=>setNav('history')} className={`flex flex-col items-center justify-center w-12 transition ${nav==='history'?'text-white':'text-gray-600'}`}>
+                                    <Icon name="history" size={20} /> <span className="text-[9px] font-bold mt-1">History</span>
+                                </button>
+
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
